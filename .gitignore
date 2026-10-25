@@ -1,0 +1,13 @@
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+venv/
+
+# Local SQLite database
+context_firewall.db
+
+# Environment variables and secrets
+.env
