@@ -3,11 +3,23 @@ import hashlib
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path("context_firewall.db")
+DB_DIR = Path("chat_databases")
+DB_DIR.mkdir(exist_ok=True)
 
 
-def init_db():
-    with sqlite3.connect(DB_PATH) as conn:
+def get_db_path(chat_id: str) -> Path:
+    """Get a separate database for each chat."""
+    safe_chat_id = hashlib.sha256(
+        chat_id.encode("utf-8")
+    ).hexdigest()
+
+    return DB_DIR / f"{safe_chat_id}.db"
+
+
+def init_db(chat_id: str):
+    db_path = get_db_path(chat_id)
+
+    with sqlite3.connect(db_path) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS uploaded_files (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -18,13 +30,24 @@ def init_db():
         """)
 
 
-def check_and_register(file_bytes: bytes, filename: str) -> dict:
-    # Generate a fingerprint from the file's exact bytes
+def check_and_register(
+    file_bytes: bytes,
+    filename: str,
+    chat_id: str
+) -> dict:
+
+    db_path = get_db_path(chat_id)
+    init_db(chat_id)
+
     file_hash = hashlib.sha256(file_bytes).hexdigest()
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(db_path) as conn:
         existing = conn.execute(
-            "SELECT id, filename FROM uploaded_files WHERE sha256 = ?",
+            """
+            SELECT id, filename
+            FROM uploaded_files
+            WHERE sha256 = ?
+            """,
             (file_hash,)
         ).fetchone()
 
@@ -34,25 +57,20 @@ def check_and_register(file_bytes: bytes, filename: str) -> dict:
                 "file_hash": file_hash,
                 "original_file_id": existing[0],
                 "original_filename": existing[1],
-                "message": "This file has already been uploaded."
+                "message": "This file has already been uploaded in this chat."
             }
 
-        conn.execute(
-            "INSERT INTO uploaded_files (filename, sha256) VALUES (?, ?)",
+        cursor = conn.execute(
+            """
+            INSERT INTO uploaded_files (filename, sha256)
+            VALUES (?, ?)
+            """,
             (filename, file_hash)
         )
-
-        file_id = conn.execute(
-            "SELECT id FROM uploaded_files WHERE sha256 = ?",
-            (file_hash,)
-        ).fetchone()[0]
 
         return {
             "is_duplicate": False,
             "file_hash": file_hash,
-            "file_id": file_id,
+            "file_id": cursor.lastrowid,
             "message": "New file registered successfully."
         }
-
-
-init_db()

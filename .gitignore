@@ -11,3 +11,5 @@ context_firewall.db
 
 # Environment variables and secrets
 .env
+
+chat_databases/
